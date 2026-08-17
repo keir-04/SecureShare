@@ -1,0 +1,2 @@
+Hello SecureShare
+This is my first encrypted file.
