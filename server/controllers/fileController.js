@@ -1,8 +1,14 @@
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const db = require("../config/db");
 
-exports.uploadFile = (req, res) => {
+const {
+  encryptFile,
+  decryptFile,
+} = require("../utils/encryption");
+
+exports.uploadFile = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -11,36 +17,57 @@ exports.uploadFile = (req, res) => {
       });
     }
 
-    const file = req.file;
+    const originalPath = req.file.path;
 
+    const encryptedName =
+      Date.now() +
+      "-" +
+      Math.round(Math.random() * 1e9) +
+      ".enc";
+
+    const encryptedPath = path.join(
+      __dirname,
+      "../uploads/encrypted",
+      encryptedName
+    );
+
+    if (!fs.existsSync(path.dirname(encryptedPath))) {
+      fs.mkdirSync(path.dirname(encryptedPath), {
+        recursive: true,
+      });
+    }
+
+    await encryptFile(originalPath, encryptedPath);
+    console.log("Encrypted:", encryptedPath);
+    
+    fs.unlinkSync(originalPath);
+    console.log("Original deleted");
+   
     db.prepare(`
       INSERT INTO files
       (owner_id, original_name, encrypted_name, file_size)
       VALUES (?, ?, ?, ?)
     `).run(
       1,
-      file.originalname,
-      file.filename,
-      file.size
+      req.file.originalname,
+      encryptedName,
+      req.file.size
     );
 
     res.status(201).json({
       success: true,
-      message: "File uploaded successfully",
-      file: {
-        id: file.filename,
-        name: file.originalname,
-        size: file.size,
-      },
+      message: "File encrypted and uploaded successfully",
     });
 
   } catch (err) {
+
     console.error(err);
 
     res.status(500).json({
       success: false,
-      message: "Internal Server Error",
+      message: err.message,
     });
+
   }
 };
 
@@ -67,36 +94,50 @@ exports.getFiles = (req, res) => {
   }
 };
 
-exports.downloadFile = (req, res) => {
+exports.downloadFile = async (req, res) => {
   try {
 
-    const { id } = req.params;
-
-    const file = db
-      .prepare("SELECT * FROM files WHERE id = ?")
-      .get(id);
+    const file = db.prepare(
+      "SELECT * FROM files WHERE id=?"
+    ).get(req.params.id);
 
     if (!file) {
       return res.status(404).json({
-        success: false,
         message: "File not found",
       });
     }
 
-    const filePath = path.join(
+    const encryptedPath = path.join(
       __dirname,
-      "../uploads/temp",
+      "../uploads/encrypted",
       file.encrypted_name
     );
 
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(encryptedPath)) {
       return res.status(404).json({
-        success: false,
-        message: "Physical file missing",
+        message: "Encrypted file missing",
       });
     }
 
-    res.download(filePath, file.original_name);
+    const tempPath = path.join(
+      os.tmpdir(),
+      file.original_name
+    );
+
+    await decryptFile(
+      encryptedPath,
+      tempPath
+    );
+
+    res.download(
+      tempPath,
+      file.original_name,
+      () => {
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      }
+    );
 
   } catch (err) {
 
@@ -113,30 +154,29 @@ exports.downloadFile = (req, res) => {
 exports.deleteFile = (req, res) => {
   try {
 
-    const { id } = req.params;
-
-    const file = db
-      .prepare("SELECT * FROM files WHERE id = ?")
-      .get(id);
+    const file = db.prepare(
+      "SELECT * FROM files WHERE id=?"
+    ).get(req.params.id);
 
     if (!file) {
       return res.status(404).json({
-        success: false,
         message: "File not found",
       });
     }
 
-    const filePath = path.join(
+    const encryptedPath = path.join(
       __dirname,
-      "../uploads/temp",
+      "../uploads/encrypted",
       file.encrypted_name
     );
 
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    if (fs.existsSync(encryptedPath)) {
+      fs.unlinkSync(encryptedPath);
     }
 
-    db.prepare("DELETE FROM files WHERE id = ?").run(id);
+    db.prepare(
+      "DELETE FROM files WHERE id=?"
+    ).run(req.params.id);
 
     res.json({
       success: true,
