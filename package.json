@@ -1,17 +1,16 @@
 {
   "name": "secureshare-pro",
   "version": "1.0.0",
-  "description": "",
+  "description": "Cross-platform Secure File Sharing System using AES-256 Encryption",
   "main": "index.js",
+  "author": "Smriti Nayak",
+  "license": "MIT",
+  "type": "commonjs",
   "scripts": {
     "client": "npm --prefix client run dev",
     "server": "nodemon server/app.js",
     "dev": "concurrently \"npm run server\" \"npm run client\""
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^13.0.3",
